@@ -1,0 +1,91 @@
+public class NumberToWord{
+    public static String mymethod(Integer num) {
+        if (num < 0 || num > 9999999) {
+            return 'Number out of range';
+        }
+        if (num == 0) {
+            return 'zero';
+        }
+        return convertNumberToWords(num).trim();
+    }
+     private static String convertNumberToWords(Integer num) {
+        String[] belowTwenty = new String[] {
+            'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+            'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'
+        };
+        String[] tens = new String[] {
+            '', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'
+        };
+        String words = '';
+        if (num / 100000 > 0) {
+            words += convertHundreds(num/ 100000) + ' lakh ';
+            num= math.mod(num,100000);
+        }
+        if (num / 1000 > 0) {
+            words += convertHundreds(num / 1000) + ' thousand ';
+            num= math.mod(num,1000);
+        }
+        if (num > 0) {
+            words += convertHundreds(num);
+        }
+        return words.trim();
+    }
+        private static String convertHundreds(Integer num) {
+        String[] belowTwenty = new String[] {
+            'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+            'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'
+        };
+        String[] tens = new String[] {
+            '', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'
+        };
+        String words = '';
+        if (num/ 100 > 0) {
+            words += belowTwenty[num/100] + ' hundred ';
+            num = math.mod(num,100);
+        }
+        if (num > 0) {
+            if (num < 20) {
+                words += belowTwenty[num];
+            } else {
+                words += tens[num / 10];
+                if (math.mod(num,10) > 0) {
+                    words += '-' + belowTwenty[math.mod(num,10)];
+                }
+            }
+        }
+        return words.trim();
+    }
+}
+public class Question5 {
+    public static void main() {
+        Integer num = 12345;
+        String result = NumberToWord.mymethod(num);
+        System.debug(result);
+    }
+}
+ 
+Q2:
+public class Question2 {
+    public void countOccurence(String num){
+        Map<String, Integer> digitCountMap = new Map<String, Integer>();
+        for(Integer i=0;i<num.length();i++){
+            String digit = num.substring(i, i+1);
+            Integer digitAsInteger = Integer.valueOf(digit);
+            if(digitCountMap.containsKey(digit)){
+                digitCountMap.put(digit, digitCountMap.get(digit)+1);
+            }
+            else{
+                digitCountMap.put(digit,1);
+            }
+        }
+        List<String> sortedDigits = new List<String>(digitCountMap.keySet());
+        sortedDigits.sort();
+        for(String digit: sortedDigits){
+            System.debug('Occurence of '+digit+': '+digitCountMap.get(digit));
+        }
+    }
+    public static void main(){
+        Question2 dc = new Question2();
+        dc.countOccurence('95682654875');
+    }
+}

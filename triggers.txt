@@ -1,0 +1,371 @@
+Below is the implementation of both triggers and their corresponding test classes. For the first task, we'll handle preventing account deletion if it has related contacts, and for the second, we'll compute the sum of billable and non-billable hours from Project Task to Project. I'll also include the necessary test classes.
+
+Task 1: Account Deletion Restriction
+Trigger: AccountDeletionTrigger
+
+trigger AccountDeletionTrigger on Account (before delete) {
+    // Collect all accounts that are about to be deleted
+    Set<Id> accountIds = Trigger.oldMap.keySet();
+
+    // Query for contacts related to those accounts
+    List<Contact> relatedContacts = [SELECT Id, AccountId FROM Contact WHERE AccountId IN :accountIds];
+
+    if (!relatedContacts.isEmpty()) {
+        // Prevent deletion if there are related contacts
+        for (Account acc : Trigger.old) {
+            acc.addError(Label.Account_Deletion_Error_Message); // Use custom label for error message
+        }
+    }
+}
+
+Custom Label:
+Navigate to Setup → Custom Labels and create a new label:
+Label Name: Account_Deletion_Error_Message
+Label Value: You cannot delete an Account that has related Contacts.
+
+Trigger: ProjectTaskTrigger
+
+trigger ProjectTaskTrigger on Project_Task__c (after insert, after update, after delete, after undelete) {
+    if (Trigger.isInsert || Trigger.isUpdate || Trigger.isDelete || Trigger.isUndelete) {
+        // Set to hold unique Project Ids
+        Set<Id> projectIds = new Set<Id>();
+       
+        // Collect Project IDs from Trigger context
+        if (Trigger.isInsert || Trigger.isUpdate || Trigger.isUndelete) {
+            for (Project_Task__c pt : Trigger.new) {
+                projectIds.add(pt.Project__c);
+            }
+        }
+        if (Trigger.isDelete) {
+            for (Project_Task__c pt : Trigger.old) {
+                projectIds.add(pt.Project__c);
+            }
+        }
+
+        // Query to get all related Project Tasks for these projects
+        List<Project__c> projects = [SELECT Id, Total_Billable_Hours__c, Total_Non_Billable_Hours__c
+                                     FROM Project__c
+                                     WHERE Id IN :projectIds];
+
+        for (Project__c project : projects) {
+            // Query tasks related to this project
+            List<Project_Task__c> tasks = [SELECT Billable_Hours__c, Non_Billable_Hours__c
+                                           FROM Project_Task__c
+                                           WHERE Project__c = :project.Id];
+
+            // Compute the sum of billable and non-billable hours
+            Decimal totalBillableHours = 0;
+            Decimal totalNonBillableHours = 0;
+
+            for (Project_Task__c task : tasks) {
+                totalBillableHours += (task.Billable_Hours__c != null) ? task.Billable_Hours__c : 0;
+                totalNonBillableHours += (task.Non_Billable_Hours__c != null) ? task.Non_Billable_Hours__c : 0;
+            }
+
+            // Update the project's total hours
+            project.Total_Billable_Hours__c = totalBillableHours;
+            project.Total_Non_Billable_Hours__c = totalNonBillableHours;
+        }
+
+        update projects;
+    }
+}
+
+
+
+public class TestDataFactory {
+
+    // Method to create test Account
+    public static Account createTestAccount(String name) {
+        Account acc = new Account(Name = name);
+        insert acc;
+        return acc;
+    }
+
+    // Method to create test Contact related to an Account
+    public static Contact createTestContact(String firstName, String lastName, Id accountId) {
+        Contact contact = new Contact(FirstName = firstName, LastName = lastName, AccountId = accountId);
+        insert contact;
+        return contact;
+    }
+
+    // Method to create test Project
+    public static Project__c createTestProject(String projectName) {
+        Project__c project = new Project__c(Name = projectName);
+        insert project;
+        return project;
+    }
+
+    // Method to create test Project Task related to a Project
+    public static Project_Task__c createTestProjectTask(Id projectId, Decimal billableHours, Decimal nonBillableHours) {
+        Project_Task__c task = new Project_Task__c(Project__c = projectId, Billable_Hours__c = billableHours, Non_Billable_Hours__c = nonBillableHours);
+        insert task;
+        return task;
+    }
+}
+
+
+
+@isTest
+public class TestAccountDeletionTrigger {
+
+    @isTest
+    static void testAccountDeletionWithContacts() {
+        // Create test data using the data factory
+        Account testAccount = TestDataFactory.createTestAccount('Test Account');
+        Contact testContact = TestDataFactory.createTestContact('Test', 'Contact', testAccount.Id);
+
+        // Attempt to delete the account and verify it fails
+        Test.startTest();
+        try {
+            delete testAccount;
+            System.assert(false, 'Expected an exception due to related contacts.');
+        } catch (DmlException e) {
+            System.assert(e.getMessage().contains(Label.Account_Deletion_Error_Message), 'Error message mismatch.');
+        }
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testAccountDeletionWithoutContacts() {
+        // Create test account without any contacts
+        Account testAccount = TestDataFactory.createTestAccount('Test Account Without Contacts');
+
+        // Attempt to delete the account and verify it succeeds
+        Test.startTest();
+        delete testAccount;
+        Test.stopTest();
+
+        // Ensure the account was deleted
+        Account deletedAccount = [SELECT Id FROM Account WHERE Id = :testAccount.Id LIMIT 1];
+        System.assert(deletedAccount == null, 'Account should be deleted.');
+    }
+}
+
+
+
+@isTest
+public class TestProjectTaskTrigger {
+   
+    @isTest
+    static void testBillableNonBillableHoursCalculation() {
+        // Create test project using the data factory
+        Project__c testProject = TestDataFactory.createTestProject('Test Project');
+
+        // Create test project tasks using the data factory
+        Project_Task__c task1 = TestDataFactory.createTestProjectTask(testProject.Id, 5, 2);
+        Project_Task__c task2 = TestDataFactory.createTestProjectTask(testProject.Id, 3, 4);
+
+        // Verify the total hours on the project after insert
+        testProject = [SELECT Total_Billable_Hours__c, Total_Non_Billable_Hours__c FROM Project__c WHERE Id = :testProject.Id];
+        System.assertEquals(8, testProject.Total_Billable_Hours__c, 'Total Billable Hours should be 8.');
+        System.assertEquals(6, testProject.Total_Non_Billable_Hours__c, 'Total Non-Billable Hours should be 6.');
+
+        // Update a task
+        task1.Billable_Hours__c = 7;
+        update task1;
+
+        // Verify the total hours on the project after update
+        testProject = [SELECT Total_Billable_Hours__c, Total_Non_Billable_Hours__c FROM Project__c WHERE Id = :testProject.Id];
+        System.assertEquals(10, testProject.Total_Billable_Hours__c, 'Total Billable Hours should be 10.');
+        System.assertEquals(6, testProject.Total_Non_Billable_Hours__c, 'Total Non-Billable Hours should still be 6.');
+
+        // Delete a task
+        delete task2;
+
+        // Verify the total hours on the project after delete
+        testProject = [SELECT Total_Billable_Hours__c, Total_Non_Billable_Hours__c FROM Project__c WHERE Id = :testProject.Id];
+        System.assertEquals(7, testProject.Total_Billable_Hours__c, 'Total Billable Hours should be 7 after task deletion.');
+        System.assertEquals(2, testProject.Total_Non_Billable_Hours__c, 'Total Non-Billable Hours should be 2 after task deletion.');
+    }
+}
+
+
+
+
+
+I wanted to update you on a small change in the Salesforce Programmatic Model 2 assignment, specifically for Q.6.
+It has been confirmed that the field "Number of Tasks on Project" should be created on the Project object, instead of the Case (Project Task) object.
+Please ensure you make this change in your assignment.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+To incorporate a **data factory** into the test classes for better test data creation and management, we can create a utility class that generates test records (e.g., Accounts, Contacts, Projects, and Project Tasks). This way, the test code becomes more organized, and the test data creation is reusable across multiple test cases.
+
+Here’s an implementation that includes a **data factory** for both test classes.
+
+### Data Factory Class: `TestDataFactory`
+
+```apex
+public class TestDataFactory {
+
+    // Method to create test Account
+    public static Account createTestAccount(String name) {
+        Account acc = new Account(Name = name);
+        insert acc;
+        return acc;
+    }
+
+    // Method to create test Contact related to an Account
+    public static Contact createTestContact(String firstName, String lastName, Id accountId) {
+        Contact contact = new Contact(FirstName = firstName, LastName = lastName, AccountId = accountId);
+        insert contact;
+        return contact;
+    }
+
+    // Method to create test Project
+    public static Project__c createTestProject(String projectName) {
+        Project__c project = new Project__c(Name = projectName);
+        insert project;
+        return project;
+    }
+
+    // Method to create test Project Task related to a Project
+    public static Project_Task__c createTestProjectTask(Id projectId, Decimal billableHours, Decimal nonBillableHours) {
+        Project_Task__c task = new Project_Task__c(Project__c = projectId, Billable_Hours__c = billableHours, Non_Billable_Hours__c = nonBillableHours);
+        insert task;
+        return task;
+    }
+}
+```
+
+### Updated Test Class 1: `TestAccountDeletionTrigger`
+
+```apex
+@isTest
+public class TestAccountDeletionTrigger {
+
+    @isTest
+    static void testAccountDeletionWithContacts() {
+        // Create test data using the data factory
+        Account testAccount = TestDataFactory.createTestAccount('Test Account');
+        Contact testContact = TestDataFactory.createTestContact('Test', 'Contact', testAccount.Id);
+
+        // Attempt to delete the account and verify it fails
+        Test.startTest();
+        try {
+            delete testAccount;
+            System.assert(false, 'Expected an exception due to related contacts.');
+        } catch (DmlException e) {
+            System.assert(e.getMessage().contains(Label.Account_Deletion_Error_Message), 'Error message mismatch.');
+        }
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testAccountDeletionWithoutContacts() {
+        // Create test account without any contacts
+        Account testAccount = TestDataFactory.createTestAccount('Test Account Without Contacts');
+
+        // Attempt to delete the account and verify it succeeds
+        Test.startTest();
+        delete testAccount;
+        Test.stopTest();
+
+        // Ensure the account was deleted
+        Account deletedAccount = [SELECT Id FROM Account WHERE Id = :testAccount.Id LIMIT 1];
+        System.assert(deletedAccount == null, 'Account should be deleted.');
+    }
+}
+```
+
+### Updated Test Class 2: `TestProjectTaskTrigger`
+
+```apex
+@isTest
+public class TestProjectTaskTrigger {
+   
+    @isTest
+    static void testBillableNonBillableHoursCalculation() {
+        // Create test project using the data factory
+        Project__c testProject = TestDataFactory.createTestProject('Test Project');
+
+        // Create test project tasks using the data factory
+        Project_Task__c task1 = TestDataFactory.createTestProjectTask(testProject.Id, 5, 2);
+        Project_Task__c task2 = TestDataFactory.createTestProjectTask(testProject.Id, 3, 4);
+
+        // Verify the total hours on the project after insert
+        testProject = [SELECT Total_Billable_Hours__c, Total_Non_Billable_Hours__c FROM Project__c WHERE Id = :testProject.Id];
+        System.assertEquals(8, testProject.Total_Billable_Hours__c, 'Total Billable Hours should be 8.');
+        System.assertEquals(6, testProject.Total_Non_Billable_Hours__c, 'Total Non-Billable Hours should be 6.');
+
+        // Update a task
+        task1.Billable_Hours__c = 7;
+        update task1;
+
+        // Verify the total hours on the project after update
+        testProject = [SELECT Total_Billable_Hours__c, Total_Non_Billable_Hours__c FROM Project__c WHERE Id = :testProject.Id];
+        System.assertEquals(10, testProject.Total_Billable_Hours__c, 'Total Billable Hours should be 10.');
+        System.assertEquals(6, testProject.Total_Non_Billable_Hours__c, 'Total Non-Billable Hours should still be 6.');
+
+        // Delete a task
+        delete task2;
+
+        // Verify the total hours on the project after delete
+        testProject = [SELECT Total_Billable_Hours__c, Total_Non_Billable_Hours__c FROM Project__c WHERE Id = :testProject.Id];
+        System.assertEquals(7, testProject.Total_Billable_Hours__c, 'Total Billable Hours should be 7 after task deletion.');
+        System.assertEquals(2, testProject.Total_Non_Billable_Hours__c, 'Total Non-Billable Hours should be 2 after task deletion.');
+    }
+}
+```
+
+### How the Data Factory Helps:
+- **Reuse**: You can use the methods in `TestDataFactory` to generate records for multiple test methods or test classes, reducing redundancy.
+- **Readability**: Test classes are cleaner, focusing more on the actual test logic and less on the setup of test data.
+- **Maintainability**: If the way test data is created changes (e.g., new required fields), you only need to update the `TestDataFactory` rather than all test classes.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Written a trigger where user will not be able to delete Account if Account has any related contacts 
+associated with it and a proper error message is shown to the user using custom label.Written test class for the trigger to test.
+
+Written a trigger to compute sum of Billable hours, non billable hours of Project 
+Task object to project’s total billable hours, total non billable hours fields which will work for insert, update, delete and undelete event.Also Written test class for the trigger.

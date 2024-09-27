@@ -1,0 +1,69 @@
+html
+
+<template>
+    <div style="text-align: center;">
+        <h2><strong>{label.Notice_Board_Heading}</strong></h2>
+        <h3><em>{label.Notice_Body}</em></h3>
+        <button>{btnData}</button>
+       
+    </div>
+   
+</template>
+
+
+
+js
+
+import { track, wire, LightningElement } from 'lwc';
+import Notice_Board_Heading from '@salesforce/label/c.Notice_Board_Heading';
+import Notice_Body from '@salesforce/label/c.Notice_Body';
+import ThankYou from '@salesforce/label/c.ThankYou';
+import ReportError from '@salesforce/label/c.ReportError';
+import Preference from "@salesforce/apex/FetchPreference.getPreference"
+ 
+ 
+export default class AssignmentTask extends LightningElement {
+    label ={
+        Notice_Board_Heading : Notice_Board_Heading,
+        Notice_Body : Notice_Body,
+        ReportError : ReportError,
+        ThankYou : ThankYou
+
+    }
+    btnData = ReportError;    
+   
+    renderedCallback() {        
+        this.template.querySelector("button").addEventListener("click", (e) => {            
+            this.btnData = ThankYou;
+        })
+    }
+ 
+    @track color
+    @wire(Preference)
+    getColor({error, data}) {        
+        if(data) {          
+            this.color = data.Background_Color__c.toLowerCase();
+            console.log('Hello');
+            this.template.querySelector('div').style.setProperty("background-color", this.color);
+        }
+        else if(error) {            
+            console.log(error)        
+        }    
+    }  
+ 
+}
+
+
+xml
+
+
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>61.0</apiVersion>
+    <isExposed>true</isExposed>
+    <targets>
+          <target>lightning__AppPage</target>
+          <target>lightning__RecordPage</target>
+    
+    </targets>
+</LightningComponentBundle>
